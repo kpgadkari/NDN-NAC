@@ -1,0 +1,5 @@
+This dir contains two parts:
+1. ccnnacnode: running on user's machine, constructing FIB to GW
+2. ccnnacgw: running on gateway, receiving requests from users, constructing FIB to users
+
+The abover programs are based on the modified DHCP code. Once the user runs such dhclient, there is a nac.conf file stored in /etc/nac.conf, ccnnacnode will read that file, and users can get GW's info and their namespace from this file. So they can send messages to GW and tell GW he is active, the GW will construct its FIB to forward interests to users.
