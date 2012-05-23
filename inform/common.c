@@ -1,5 +1,38 @@
 #include "common.h"
 
+#ifdef __APPLE__&__MATCH__
+void get_hw_addr(const char *name, struct hardware *hw) {
+	struct ifaddrs * addrs;
+	struct ifaddrs * cursor;
+	const struct sockaddr_dl * dlAddr;
+	
+	if (getifaddrs(&addrs) == 0) {
+	    cursor = addrs;
+	    while (cursor != 0) {
+	        if ( (cursor->ifa_addr->sa_family == AF_LINK)
+	            && strcmp(name,  cursor->ifa_name)==0 ) {
+			//(((const struct sockaddr_dl *) cursor->ifa_addr)->sdl_type == IFT_ETHER) && 
+	            dlAddr = (const struct sockaddr_dl *) cursor->ifa_addr;
+			if(dlAddr->sdl_type == IFT_ETHER){//check net/if_types.h for details
+				hw->hlen = 7;
+				hw->hbuf[0] = HTYPE_ETHER;
+				memcpy(&hw->hbuf[1], &dlAddr->sdl_data[dlAddr->sdl_nlen], 6);
+			}
+			if(dlAddr->sdl_type == IFT_FDDI){
+				hw->hlen = 17;
+				hw->hbuf[0] = HTYPE_FDDI;
+				memcpy(&hw->hbuf[1], &dlAddr->sdl_data[dlAddr->sdl_nlen], 16);
+			}
+	        }
+	        cursor = cursor->ifa_next;
+	    }
+	
+	    freeifaddrs(addrs);
+	}    
+}
+#endif
+
+#ifdef linux
 void get_hw_addr(const char *name, struct hardware *hw) {
 	int sock;
 	struct ifreq tmp;
@@ -48,6 +81,7 @@ void get_hw_addr(const char *name, struct hardware *hw) {
 
 	close(sock);
 }
+#endif
 
 void get_face_name (char *face_name, char *ip){
 	struct ifaddrs *addrs, *iap;

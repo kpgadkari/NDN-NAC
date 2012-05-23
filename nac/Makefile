@@ -5,7 +5,7 @@ STRIP = strip
 CFLAGS = -pipe
 #CFLAGS = -pipe -DDEBUG
 
-#CCNX_DIR = /home2/ndn/ccnx-0.4.2
+#CCNX_DIR = /Users/fan/NDN-NAC/ccnx-0.6.0
 INCLUDES = -I $(CCNX_DIR)/include
 LIBS = $(CCNX_DIR)/lib/libccn.a -lcrypto
 
@@ -16,7 +16,7 @@ OBJS_NAC = ${SRCS_NAC:.c=.o}
 
 default all: $(PROG_NAC)
 
-$(PROG_NAC): $(LIBS)
+#$(PROG_NAC): $(LIBS)
 
 #$(PROG_NAC): $(OBJS_NAC)
 #	$(LD) -o $@ $(OBJS_NAC) $(LIBS)

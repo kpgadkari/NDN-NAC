@@ -12,16 +12,11 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 #include <sys/ioctl.h>
-
+//#include <linux/if_arp.h>
 #include <net/if_arp.h>
-#include <net/if.h>
-
-#ifdef __APPLE__&__MATCH__
-#include <net/if_dl.h>
-#include <net/if_types.h>
-#endif
 
 #define SERVERPORT "67"	// the port users will be connecting to
+//#define SO_REUSEPORT 15
 #define MAXBUFLEN 1500
 #define CLTPORT 68
 

@@ -332,7 +332,7 @@ redo:
 	socklen_t addr_len = sizeof their_addr;
 wait:
 	if(readable_time(sockfd, TIMEOUT) == 0){//need to add retry
-		printf("socket timeout, need to try again\n");
+		printf("timeout, try again\n");
 		if(retry < MAXRETRYTIMES){
 			retry ++;
 			goto redo;

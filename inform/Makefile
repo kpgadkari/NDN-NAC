@@ -11,7 +11,7 @@ OBJS_INFORM = ${SRCS_INFORM:.c=.o}
 
 default all: $(PROG_INFORM)
 
-$(PROG_INFORM): $(LIBS)
+#$(PROG_INFORM): $(LIBS)
 
 #$(PROG_NAC): $(OBJS_NAC)
 #	$(LD) -o $@ $(OBJS_NAC) $(LIBS)

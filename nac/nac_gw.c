@@ -165,7 +165,7 @@ void print_users(struct mydata *md){
     printf("print users:\n");
     struct user_info *ulist = md->users_list;
     while( ulist != NULL ){//to the tail, won't add redunant prefix
-        printf("<%s:%s> len<%d>\n", ulist->address, ulist->port, ulist->name_prefix->length);
+        printf("<%s:%s>\n", ulist->address, ulist->port);
         ulist = ulist->next;
     }
 }
