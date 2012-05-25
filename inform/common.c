@@ -1,17 +1,17 @@
 #include "common.h"
 
-#if defined(__APPLE__) && defined(__MATCH__)
+#if defined(__APPLE__) && defined(__MACH__)
 void get_hw_addr(const char *name, struct hardware *hw) {
 	struct ifaddrs * addrs;
 	struct ifaddrs * cursor;
 	const struct sockaddr_dl * dlAddr;
-	
+
 	if (getifaddrs(&addrs) == 0) {
 	    cursor = addrs;
 	    while (cursor != 0) {
 	        if ( (cursor->ifa_addr->sa_family == AF_LINK)
 	            && strcmp(name,  cursor->ifa_name)==0 ) {
-			//(((const struct sockaddr_dl *) cursor->ifa_addr)->sdl_type == IFT_ETHER) && 
+			//(((const struct sockaddr_dl *) cursor->ifa_addr)->sdl_type == IFT_ETHER) &&
 	            dlAddr = (const struct sockaddr_dl *) cursor->ifa_addr;
 			if(dlAddr->sdl_type == IFT_ETHER){//check net/if_types.h for details
 				hw->hlen = 7;
@@ -26,9 +26,9 @@ void get_hw_addr(const char *name, struct hardware *hw) {
 	        }
 	        cursor = cursor->ifa_next;
 	    }
-	
+
 	    freeifaddrs(addrs);
-	}    
+	}
 }
 #endif
 
@@ -50,7 +50,7 @@ void get_hw_addr(const char *name, struct hardware *hw) {
 	memset(&tmp, 0, sizeof(tmp));
 	strcpy(tmp.ifr_name, name);
 	if (ioctl(sock, SIOCGIFHWADDR, &tmp) < 0) {
-		printf("Error getting hardware address for \"%s\": %m", 
+		printf("Error getting hardware address for \"%s\": %m",
 			  name);
 	}
 
@@ -109,10 +109,10 @@ int get_random(){
 int readable_time(int fd, int sec){
 	fd_set rset;
 	struct timeval tv;
-    
+
 	FD_ZERO(&rset);
 	FD_SET(fd, &rset);
-    
+
 	tv.tv_sec = sec;
 	tv.tv_usec = 0;
 
