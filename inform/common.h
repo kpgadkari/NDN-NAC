@@ -16,10 +16,10 @@
 #include <net/if_arp.h>
 #include <net/if.h>
 
-#ifdef __APPLE__&__MATCH__
+#if defined(__APPLE__) && defined(__MATCH__)
 #include <net/if_dl.h>
 #include <net/if_types.h>
-#endif
+#endif 
 
 #define SERVERPORT "67"	// the port users will be connecting to
 #define MAXBUFLEN 1500

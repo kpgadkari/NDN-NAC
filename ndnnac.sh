@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CCN_DIR=/Users/fan/NDN-NAC/ccnx-0.6.0
+CCN_DIR=~/ccnx
 OS=`uname`
 IP="" # store IP
 DST="255.255.255.255"

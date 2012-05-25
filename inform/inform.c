@@ -1,16 +1,22 @@
 #include "common.h"
 
+#define NACSERVER 0
+#define NDNGW 1
+
 #define DHCPACK 5
 #define DHCPINFORM 8
 #define INTERFACENAME 255
-#define DHO_NDN_GATEWAY 246
-#define DHO_NDN_NAMESPACE 247
 
-#define MAXRETRYTIMES 3
+#define DHO_NAC_SERV 246
+#define DHO_NDN_GATEWAY 247
+#define DHO_NDN_NAMESPACE 248
+
+#define MAXRETRYTIMES 2
 #define TIMEOUT 6
 #define RESULTFILE "nac.conf"
+#define BROADCAST "255.255.255.255"
 
-u_int32_t my_xid;//transaction id
+char dst[255] = "";
 
 struct ndn_data{
 	char domain[255];
@@ -32,16 +38,18 @@ void save_para(struct ndn_data *mydata){
 		printf("Error in opening file %s\n", RESULTFILE);
 	}
 
-	fprintf(fp, "ndn_gateway %s:%d\n", inet_ntoa(mydata->gw_addr), ntohs(mydata->gw_port));
-	fprintf(fp, "ndn_namespace ccnx:/%s/%s\n", mydata->domain, mydata->name);
+	fprintf(fp, "ndn_gateway %s:%d %s\n", inet_ntoa(mydata->gw_addr), ntohs(mydata->gw_port), mydata -> domain);
+	fprintf(fp, "ndn_namespace %s\n", mydata->name);
 
 	fclose(fp);
 }
 
-int parse_options(struct dhcp_packet *packet){
+//target indicating the parsed option, 0=nacserver, 1=ndngw
+int parse_ndn_options(struct dhcp_packet *packet, int target){
 	int flag = -1;//successful?
 	int flag_gateway = 0;//indicating whether we get the NDN option
 	int flag_name = 0;//indicating whether we get the domain option
+	int flag_nacserver = 0;
 	unsigned char options[DHCP_MAX_OPTION_LEN];
 	struct ndn_data inform_reply;
 	memcpy(options, packet->options, DHCP_MAX_OPTION_LEN);
@@ -59,6 +67,14 @@ int parse_options(struct dhcp_packet *packet){
 		l = options[index];
 		index ++;
 
+		if(code == DHO_NAC_SERV){
+			struct in_addr nac_addr;
+			memcpy(&nac_addr, options + index, 4);
+			strcpy(dst, inet_ntoa(nac_addr));
+			//printf("nac server : %s\n", dst);
+			flag_nacserver = 1;
+		}
+
 		if(code == DHO_NDN_NAMESPACE){//namespace
 			char *name = inform_reply.name;
 			memcpy(name, options + index, l);
@@ -74,7 +90,7 @@ int parse_options(struct dhcp_packet *packet){
 			unsigned addr_type = ndn[offset];
 			offset ++;
 
-			if(addr_type == 1){//v4 addr 
+			if(addr_type == 0){//v4 addr 
 				struct in_addr *gw_addr = &(inform_reply.gw_addr);
 				memcpy(gw_addr, ndn + offset, 4);//addr				
 				//printf("gw addr %s\n", inet_ntoa(gw_addr));
@@ -92,7 +108,7 @@ int parse_options(struct dhcp_packet *packet){
 				//printf("name is %s\n", name);
 
 				flag_gateway = 1;
-			}else if(addr_type == 2){//v6 addr
+			}else if(addr_type == 1){//v6 addr
 				//update latter
 			}else{
 				printf("unknown addr type\n");
@@ -103,17 +119,19 @@ int parse_options(struct dhcp_packet *packet){
 		index = index + l;//after the last option
 	}
 
-	if(flag_gateway == 1 && flag_name == 1){
+	if(flag_gateway == 1 && flag_name == 1 && target == 1){
 		//save the parameters in a file
 		save_para(&inform_reply);
 		flag = 0;
 	}
-
+	if(flag_nacserver == 1 && target == 0){
+		flag = 0;
+	}
 	return flag;
 }
 
 //this func is only for packet not more than MAX
-int is_valid_reply(struct dhcp_packet *packet, int len){
+int is_valid_reply(struct dhcp_packet *packet, int len, u_int32_t my_xid){
 	//if the transaction ID is wrong, or it is not the reply, it is invalid
 	if(packet->xid != my_xid || packet->op != BOOTREPLY)
 		return -1;
@@ -175,7 +193,7 @@ void set_sock_opt(int sockfd){
 	}
 }
 
-void make_common_parts(struct dhcp_packet *packet, char *myip){
+void make_common_parts(struct dhcp_packet *packet, char *myip, u_int32_t my_xid){
 	int rv;
 	//get the hardware address by ip
 	char face_name[INTERFACENAME];
@@ -212,10 +230,11 @@ void make_common_parts(struct dhcp_packet *packet, char *myip){
 		memcpy(&(packet->chaddr), &(myhw.hbuf[1]), (unsigned)(myhw.hlen - 1));
 }
 
-int make_options(struct dhcp_packet *packet){
+int make_options(struct dhcp_packet *packet, int flag){
 	int offset = 0;
 	//construct options here
 	unsigned char options[DHCP_MAX_OPTION_LEN];
+	memset(options, 0, DHCP_MAX_OPTION_LEN);
 	
 	//cpy the magic cookie(start of options)
 	memcpy(options, DHCP_OPTIONS_COOKIE, 4);
@@ -233,58 +252,50 @@ int make_options(struct dhcp_packet *packet){
 	//option 55, request list
 	memset(&oh, 0, sizeof (struct option_header));
 	oh.code = DHO_DHCP_PARAMETER_REQUEST_LIST;
-	oh.len = 2;//right now, we only need domain name and the 246
-	memcpy(options + offset, &oh, sizeof (struct option_header));
-	offset += sizeof (struct option_header);
-	options[offset] = DHO_NDN_NAMESPACE;//this one should be the NDN option
-	offset ++;
-	options[offset] = DHO_NDN_GATEWAY;
-	offset ++;
-
+	if (flag == NACSERVER){
+		oh.len = 1;//only need 246(NAC server)
+		memcpy(options + offset, &oh, sizeof (struct option_header));
+		offset += sizeof (struct option_header);
+		options[offset] = DHO_NAC_SERV;//this one should be the NDN option
+		offset ++;
+	}else if (flag == NDNGW){
+		oh.len = 2;//right now, we need name and gw
+		memcpy(options + offset, &oh, sizeof (struct option_header));
+		offset += sizeof (struct option_header);
+		options[offset] = DHO_NDN_NAMESPACE;//this one should be the NDN option
+		offset ++;
+		options[offset] = DHO_NDN_GATEWAY;
+		offset ++;
+	}
 	//the end of options
 	options[offset] = DHO_END;
 	offset ++;
+
+	//make the packet as word boundary
+	if(offset % 4 != 0){
+		offset = offset + 4 - (offset % 4);
+	}
 	memcpy(packet->options, options, offset);
 	
 	return offset;
 }
 
-int main(int argc, char *argv[])
-{
+int get_option(char *myip, int flag, char *srv, u_int32_t my_xid){
 	int sockfd;
 	struct addrinfo hints, *servinfo, *p;
 	int rv, retry = 0;
 	int numbytes;
-	char *myip = NULL, *srv = NULL;
 	char buf[MAXBUFLEN];
 
-	while ((rv = getopt(argc, argv, "a:s:h")) != -1) {
-        	switch (rv){
-	            case 'a':
-        	        myip = optarg;
-                	break;
-	            case 's':
-        	        srv = optarg;
-                	break;
-	            case 'h':
-        	    default:
-                	usage(argv[0]);
-	        }
-   	 }
-	if (argc != 5 || myip == NULL || srv == NULL) {
-		usage(argv[0]);
-	}
-
 	//generate the transaction no.
-	my_xid = get_random();
-
-	memset(&hints, 0, sizeof hints);
+	my_xid = my_xid + get_random();
+	memset(&hints, 0, sizeof (struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 
 	if ((rv = getaddrinfo(srv, SERVERPORT, &hints, &servinfo)) != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-		return 1;
+		exit(1);
 	}
 
 	// loop through all the results and make a socket
@@ -299,24 +310,32 @@ int main(int argc, char *argv[])
 
 	if (p == NULL) {
 		fprintf(stderr, "talker: failed to bind socket\n");
-		return 2;
+		exit(2);
 	}
 
 	//let the socket can listening on 68, and broadcast
 	set_sock_opt(sockfd);
-
 	//create the dhcp packet structure
 	struct dhcp_packet out_packet;
 	init_packet(&out_packet);
 
 	//make the common parts, such as xid, ciadr et al.
-	make_common_parts(&out_packet, myip);
+	make_common_parts(&out_packet, myip, my_xid);
+	
+	int offset = 0;
+
+	//to find NAC server, we must broadcast message first
+	if(flag == NACSERVER)
+		offset = make_options(&out_packet, NACSERVER);
 	
 	//make the options part, but right now only support domain name and private 246
-	int offset = make_options(&out_packet);
+	if(flag == NDNGW)
+		offset = make_options(&out_packet, NDNGW);
 
 	//DHCP_FIXED_NON_UDP includes all the field from op to the end of file, offset is the length of options
 	int msg_len = DHCP_FIXED_NON_UDP + offset;
+
+	freeaddrinfo(servinfo);
 redo:
 	memset(buf, 0, MAXBUFLEN);
 	memcpy(buf, &out_packet, msg_len);
@@ -326,7 +345,6 @@ redo:
 		close(sockfd);
 		exit(1);
 	}
-
 	//read from remote server, maybe we need to get its addr for the latter use
 	struct sockaddr_storage their_addr;
 	socklen_t addr_len = sizeof their_addr;
@@ -349,8 +367,14 @@ wait:
 		memcpy(&in_packet, buf, numbytes);
 
 		//check if this message is the right ACK, on the same port, dhclient may send out request and get ack or offer
-		if((rv = is_valid_reply(&in_packet, numbytes)) == 0){
-			rv = parse_options(&in_packet);
+		if((rv = is_valid_reply(&in_packet, numbytes, my_xid)) == 0){
+
+			if(flag == NACSERVER)
+				rv = parse_ndn_options(&in_packet, 0);//parse nac server first
+
+			if(flag == NDNGW)
+				rv = parse_ndn_options(&in_packet, 1);				
+	
 			if(rv == -1)
 				goto wait;
 		}
@@ -359,10 +383,39 @@ wait:
 			goto wait;
 		}
 	}
-	
 out:
-	freeaddrinfo(servinfo);
 	close(sockfd);
+	return my_xid;
+}
 
+int main(int argc, char *argv[])
+{
+	int rv;
+	char *myip = NULL, *srv = NULL;
+	u_int32_t my_xid;//transaction id
+
+	while ((rv = getopt(argc, argv, "a:s:h")) != -1) {
+        	switch (rv){
+	            case 'a':
+        	        myip = optarg;
+                	break;
+	            case 's':
+        	        srv = optarg;
+                	break;
+	            case 'h':
+        	    default:
+                	usage(argv[0]);
+	        }
+   	 }
+	if (argc != 5 || myip == NULL || srv == NULL) {
+		usage(argv[0]);
+	}
+
+	my_xid = 0;
+	my_xid = get_option(myip, NACSERVER, BROADCAST, my_xid);
+
+	if(strcmp(dst, "") != 0){
+		get_option(myip, NDNGW, dst, my_xid);
+	}
 	return 0;
 }

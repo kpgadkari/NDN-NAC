@@ -1,1 +1,2 @@
 To start, you must specify the CCNX_DIR in both Makefile and ndnnac.sh
+we assume that you only have one IP on your machine

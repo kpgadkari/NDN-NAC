@@ -13,47 +13,43 @@ struct user_info{
     struct user_info *next;
 };
 
-struct common_prefix{
-    char name_prefix[255];
-    struct common_prefix *next;
-};
-
 struct mydata{
     struct user_info *users_list;
-    struct common_prefix *prefix_list;
+    struct prefixes *broadcast_list;
+    struct prefixes *prefix_list;
     int prefix_num;
     struct ccn *h;
 };
 
 void print_prefixes(struct mydata *md){
     printf("print prefixes:\n");
-    struct common_prefix *plist = md->prefix_list;
+    struct prefixes *plist = md->broadcast_list;
     while( plist != NULL ){//to the tail, won't add redunant prefix
-        printf("<%s>\n", plist->name_prefix);
+        printf("<%s>\n", plist->name);
         plist = plist->next;
     }
 }
 
 int add_newprefix(struct mydata *md, char *new){
-    struct common_prefix *plist = md->prefix_list;
-    struct common_prefix *last = NULL;
+    struct prefixes *plist = md->broadcast_list;
+    struct prefixes *last = NULL;
 
     if(plist == NULL){
-        plist = (struct common_prefix *)malloc(sizeof (struct common_prefix));
-        strcpy(plist->name_prefix, new);
+        plist = (struct prefixes *)malloc(sizeof (struct prefixes));
+        strcpy(plist->name, new);
         plist->next = NULL;
-	md->prefix_list = plist;
+	md->broadcast_list = plist;
     }else{
         while(plist != NULL){
-            if(strcmp(plist->name_prefix, new) == 0){
+            if(strcmp(plist->name, new) == 0){
                 printf("duplicate prefix found: %s\n", new);
                 return -1;
 	    }
             last = plist;
             plist = plist->next;
         }
-        last->next = (struct common_prefix *)malloc(sizeof (struct common_prefix));
-        strcpy(last->next->name_prefix, new);
+        last->next = (struct prefixes *)malloc(sizeof (struct prefixes));
+        strcpy(last->next->name, new);
         last->next->next = NULL;
     }
     print_prefixes(md);
@@ -234,13 +230,13 @@ void *get_in_addr(struct sockaddr *sa)
 int add_common_prefix(struct mydata *md, char *addr, char *port){
     struct ccn *h = md->h;
     struct ccn_charbuf *prefix = NULL;
-    struct common_prefix *plist = md->prefix_list;
+    struct prefixes *plist = md->broadcast_list;
     int res;
 
     prefix = ccn_charbuf_create();
     while( plist != NULL ){//to the tail, won't add redunant prefix
         prefix->length = 0;
-        res = ccn_name_from_uri(prefix, plist->name_prefix);
+        res = ccn_name_from_uri(prefix, plist->name);
         if(res < 0){
             printf("cannot convert prefix into uri\n");
             return 1;
@@ -301,17 +297,17 @@ int act_handler(char * buf, struct mydata *md){//protocol field may be used latt
     return 0;
 }
 
-int add_common_namespaces(char *buf, int offset, struct mydata *md){
+int add_broadcast_namespaces(char *buf, int offset, struct mydata *md){
     int prefix_num = md->prefix_num, i;
     buf[offset] = prefix_num & 0xff;//1 common namespaces
     offset++;
 
-    struct common_prefix *plist = md->prefix_list;
+    struct prefixes *plist = md->broadcast_list;
     while( plist != NULL ){//traverse the list
-        char *str = plist->name_prefix;
+        char *str = plist->name;
         buf[offset] = strlen(str) & 0xff;
         offset++;
-        memcpy(buf+offset, plist->name_prefix, strlen(str));
+        memcpy(buf+offset, plist->name, strlen(str));
         offset += strlen(str);
         plist = plist->next;
     }
@@ -399,76 +395,76 @@ int main(int argc, char **argv)
 
     addr_len = sizeof their_addr;
 
-while(1){
-    if ((numbytes = recvfrom(sockfd, buf, MAXBUFLEN-1 , 0,
-        (struct sockaddr *)&their_addr, &addr_len)) == -1) {
-        perror("recvfrom");
-        exit(1);
-    }
-
-    printf("GW: got packet from %s\n",
-        inet_ntop(their_addr.ss_family,
-            get_in_addr((struct sockaddr *)&their_addr),
-            s, sizeof s));
-
-    struct pheader header;
-    
-    memcpy(&header, buf, sizeof (struct pheader));
-    if(is_valid_act(&header) == -1){
-        printf("recved msg is not valid act msg\n");
-        continue;
-    }
-
-    /////valid ACT msg//////
-    if(header.msgType == MSGACT){//since now, only accept MSGACT
-        res = act_handler(buf, md);
-        //print_users(md);
-        int offset = 0;
-        memset(buf, 0, MAXBUFLEN);
-        struct pheader *nheader = NULL;
-        if(res != 0){
-            //return error code here
-            nheader = get_header(ACTNACK);
-            //memcpy(buf, nheader, sizeof (struct pheader));
-            offset += sizeof (struct pheader);
-
-            buf[offset] = res & 0xff;
-            offset++;
-            
-        }else{
-            nheader = get_header(ACTACK);
-            //memcpy(buf, nheader, sizeof (struct pheader));//the header need to cpy as the last one
-            offset += sizeof (struct pheader);
-
-            struct pack *ack = get_pack(CCNPORT, UDP, 1);//now only one option
-            memcpy(buf + offset, ack, sizeof (struct pack));
-            offset += sizeof (struct pack);
-            free(ack);
-
-            //buf[offset] = 1;//for test, just 1 option, can set in the gw.conf file latter
-            //offset++;
-            buf[offset] = 0;//option 0, common namespaces
-            offset++;
-            
-            //need to add common namespaces
-            offset = add_common_namespaces(buf, offset, md);
-        }
-            
-        //here is the place to cpy header
-        nheader->length = htons(offset);
-        memcpy(buf, nheader, sizeof (struct pheader));
-
-        free(nheader);
-        //need to respond user's request
-        if ((numbytes = sendto(sockfd, buf, offset, 0,
-                 (struct sockaddr *)&their_addr, addr_len)) == -1) {
-            perror("GW: sendto");
+    while(1){
+        if ((numbytes = recvfrom(sockfd, buf, MAXBUFLEN-1 , 0,
+            (struct sockaddr *)&their_addr, &addr_len)) == -1) {
+            perror("recvfrom");
             exit(1);
         }
+    
+        printf("GW: got packet from %s\n",
+            inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *)&their_addr),
+                s, sizeof s));
+    
+        struct pheader header;
+        
+        memcpy(&header, buf, sizeof (struct pheader));
+        if(is_valid_act(&header) == -1){
+            printf("recved msg is not valid act msg\n");
+            continue;
+        }
+    
+        /////valid ACT msg//////
+        if(header.msgType == MSGACT){//since now, only accept MSGACT
+            res = act_handler(buf, md);
+            //print_users(md);
+            int offset = 0;
+            memset(buf, 0, MAXBUFLEN);
+            struct pheader *nheader = NULL;
+            if(res != 0){
+                //return error code here
+                nheader = get_header(ACTNACK);
+                //memcpy(buf, nheader, sizeof (struct pheader));
+                offset += sizeof (struct pheader);
+    
+                buf[offset] = res & 0xff;
+                offset++;
+                
+            }else{
+                nheader = get_header(ACTACK);
+                //memcpy(buf, nheader, sizeof (struct pheader));//the header need to cpy as the last one
+                offset += sizeof (struct pheader);
+    
+                struct pack *ack = get_pack(gwaddr, CCNPORT, UDP, 1);//the last one should be how many prefixes
+                memcpy(buf + offset, ack, sizeof (struct pack));
+                offset += sizeof (struct pack);
+                free(ack);
+    
+                //buf[offset] = 1;//for test, just 1 broadcast name
+                //offset++;
+                //buf[offset] = 0;//option 0, common namespaces
+                //offset++;
+                
+                //need to add common namespaces
+                offset = add_broadcast_namespaces(buf, offset, md);
+            }
+                
+            //here is the place to cpy header
+            nheader->length = htons(offset);
+            memcpy(buf, nheader, sizeof (struct pheader));
+    
+            free(nheader);
+            //need to respond user's request
+            if ((numbytes = sendto(sockfd, buf, offset, 0,
+                     (struct sockaddr *)&their_addr, addr_len)) == -1) {
+                perror("GW: sendto");
+                exit(1);
+            }
+        }
+        ///////////////////////
     }
-    ///////////////////////
-}
-
+    
     close(sockfd);
 
     exit(0);

@@ -508,7 +508,7 @@ int ccnb_append_dhcp_content(struct ccn_charbuf *c, int count, const struct ccn_
 struct pheader *get_header(uint8_t type){
     //construct the packet header
     struct pheader *header = (struct pheader *)malloc(sizeof (struct pheader));
-    header->ver = 1;
+    header->ver = 64;//01000000, the first 2 bits are version
     header->msgType = type;
     header->length = 0;
     return header;
@@ -535,13 +535,20 @@ struct pact *get_pact(char *myip, int iport, int len, int protocol){
     return act;
 }
 
-struct pack *get_pack(int port, int protocol, int number){
+struct pack *get_pack(char *myip, int port, int protocol, int number){
     uint16_t myport = port & 0xffff;
     uint8_t num = number & 0xff;
     uint8_t prot = protocol & 0xff;
 
     //construct the packet content
     struct pack *ack = (struct pack *)malloc(sizeof (struct pack));
+    struct in_addr node_addr;
+    int res = inet_aton(myip, &node_addr);
+    if (res == 0){
+        printf("inet_aton error\n");
+        exit(1);
+    }
+    memcpy(ack, &node_addr, sizeof (struct in_addr));
 
     ack->port = htons(myport);
     ack->number = num;
@@ -550,13 +557,13 @@ struct pack *get_pack(int port, int protocol, int number){
 }
 
 int is_valid_act(struct pheader *header){
-    if(header->ver == 1 && header->msgType == MSGACT)
+    if((header->ver & 0x40) == 64 && header->msgType == MSGACT)
         return 0;
     return -1;
 }
 
 int is_valid_response(struct pheader *header){
-    if(header->ver == 1 && (header->msgType == ACTACK || header->msgType == ACTNACK))
+    if((header->ver & 0x40) == 64 && (header->msgType == ACTACK || header->msgType == ACTNACK))
         return 0;
     return -1;
 }

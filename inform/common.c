@@ -1,6 +1,6 @@
 #include "common.h"
 
-#ifdef __APPLE__&__MATCH__
+#if defined(__APPLE__) && defined(__MATCH__)
 void get_hw_addr(const char *name, struct hardware *hw) {
 	struct ifaddrs * addrs;
 	struct ifaddrs * cursor;

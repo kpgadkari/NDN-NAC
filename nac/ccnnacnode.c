@@ -6,18 +6,18 @@
 struct ndngw{
     char addr[20];
     char port[10];
+    struct prefixes *namespace;
     struct ndngw *next;
 };
 
 struct mydata{
     struct ndngw *gws;
     char namespace[255];
+    //struct prefixes namespace;
     char *myip;
     char *myport;
     struct ccn *h;
 };
-
-
 
 static void usage(const char *progname)
 {
@@ -52,6 +52,29 @@ int construct_fib(char *common, struct mydata *md){
     return 0;
 }
 
+int parse_name(char *buf, int offset, struct mydata *md){
+    char common[255];
+    int names = buf[offset];//number of namespaces
+    offset ++;
+    int i = 0;
+ 
+    while(i<names){
+        int len = buf[offset];//len of current namespace
+        offset ++;
+        //common = (char *)malloc(len+1);
+        memcpy(common, buf + offset, len);
+        offset += len;
+        common[len] = '\0';
+        //printf("common prefix<%s><%u>\n", common, len);
+        construct_fib(common, md);
+        i++;
+    }
+
+    //construct_fib("ccnx:/", md);
+    return 0;
+}
+
+/*
 int parse_opt0(char *buf, int offset, struct mydata *md){
     char common[255];
     int names = buf[offset];//number of namespaces
@@ -73,8 +96,8 @@ int parse_opt0(char *buf, int offset, struct mydata *md){
     construct_fib("ccnx:/", md);
     return 0;
 }
-
-void addgw(char *addr, char *port, struct mydata *md){
+*/
+struct ndngw *addgw(char *addr, char *port, struct mydata *md){
     //find the place that can add gw
     struct ndngw *pos = md->gws;
     if(pos == NULL){
@@ -92,13 +115,54 @@ void addgw(char *addr, char *port, struct mydata *md){
     strcpy(pos->addr, addr);
     strcpy(pos->port, port);
 
-    printf("<%s><%s>\n", pos->addr, pos->port);
+    //printf("<%s><%s>\n", pos->addr, pos->port);
+    return pos;
+}
+
+void add_prefix(struct ndngw *p, char *name){
+    struct prefixes *pos = p -> namespace;
+    if(pos == NULL){
+        pos = (struct prefixes *)malloc(sizeof (struct prefixes));
+        pos->next = NULL;
+        p->namespace = pos;
+    }else{
+        while(pos->next != NULL)
+            pos = pos->next;
+        pos->next = (struct prefixes *)malloc(sizeof (struct prefixes));
+        pos = pos->next;
+        pos->next = NULL;
+    }
+    strcpy(pos->name, name);
+}
+
+void construct_gw(char *gw, struct mydata *md){
+    struct ndngw *pos = md->gws;
+    while(pos != NULL){
+        if(strcmp(pos->addr, gw) == 0){
+
+            struct prefixes *list = pos->namespace;
+            while(list != NULL){
+                //printf("<%s>\n", list->name);
+                construct_fib(list->name, md);
+                list = list->next;
+            }
+
+            pos = pos->next;
+        }
+    }
 }
 
 void print_gws(struct mydata *md){
     struct ndngw *pos = md->gws;
     while(pos != NULL){
         printf("--<%s><%s>--\n", pos->addr, pos->port);
+
+        struct prefixes *list = pos->namespace;
+        while(list != NULL){
+            printf("<%s>\n", list->name);
+            list = list->next;
+        }
+
         pos = pos->next;
     }
 }
@@ -150,13 +214,32 @@ int read_config(char * filename, struct mydata *md){
 	}
 	else if(strcmp(type, "ndn_gateway") == 0){
 	    //printf("gw: <%s>\n", last);
+            int count = 0;
+            struct ndngw *pos;
 	    while((gw = strtok_r(NULL, seps, &last)) != NULL){
+                if(count == 0){
+                    char *ip, *port;
+                    ip = strtok_r(gw,":",&port);
+                    if(ip != NULL){
+                        pos = addgw(ip, port, md);
+                    }
+                    //printf("%s %s\n", pos->addr, pos->port);
+                }else{
+                    //printf("gwName:%s\n", gw); 
+                    //add the gw's prefix
+                    add_prefix(pos, gw); 
+                }
+                count ++;
+            }
+/*
+            if((gw = strtok_r(NULL, seps, &last)) != NULL){
                 char *ip, *port;
-                ip = strtok_r(gw,":",&port);
+                ip = strtok_r(gw, ":", &port);
                 if(ip != NULL){
                     addgw(ip, port, md);
                 }
             }
+*/
 	}
 	else{
 	    printf("cannot  recognize %s\n", type);
@@ -232,11 +315,8 @@ int main(int argc, char *argv[])
     }
 
     //read config
-    //char * dir = getenv("HOME");
-    //char path[100];
-    //sprintf(path, "%s/.ccnx/nac.conf", getenv("HOME"));
     read_config(nacfile, md);
-    //print_gws();
+    print_gws(md);
 
     //for now, just try the first gw
     gwaddr = md->gws->addr;
@@ -294,7 +374,7 @@ int main(int argc, char *argv[])
         perror("talker: sendto");
         exit(1);
     }
-    printf("ccnnacnode: sent %d bytes to %s\n", numbytes, gwaddr);
+    //printf("ccnnacnode: sent %d bytes to %s\n", numbytes, gwaddr);
 
     //receive gw's response
     struct sockaddr_storage their_addr;
@@ -302,7 +382,7 @@ int main(int argc, char *argv[])
     memset(buf, 0, MAXBUFLEN);
 
     if(readable_timeo(sockfd, 3) == 0){
-        printf("socket timeout, need to try again\n");
+        printf("socket timeout, try again\n");
     }else{
         if ((numbytes = recvfrom(sockfd, buf, MAXBUFLEN-1 , 0,
             (struct sockaddr *)&their_addr, &addr_len)) == -1) {
@@ -322,7 +402,7 @@ int main(int argc, char *argv[])
         if(header->msgType == ACTNACK){
             printf("error code: <%u>\n", buf[offset]);
         }else if (header->msgType == ACTACK){
-            printf("add the common FIBs, print out them in a file\n");
+            //printf("add the common FIBs, print out them in a file\n");
             ///parse options
             //int options = buf[offset];//number of options
             //offset ++;
@@ -330,15 +410,21 @@ int main(int argc, char *argv[])
             struct pack ack_msg;
             memcpy(&ack_msg, buf + offset, sizeof (struct pack));
             offset += sizeof (struct pack);
-            printf("port:%d, protocol %d, opt num %d\n", ntohs(ack_msg.port), ack_msg.prot, ack_msg.number);
 
-            int opt_code = buf[offset];//option code
-            offset ++;
+            struct in_addr gw;
+            memcpy(&gw, &(ack_msg.addr), sizeof (struct in_addr));
+            //printf("addr:%s, port:%d, protocol %d, name num %d\n", inet_ntoa(gw), ntohs(ack_msg.port), ack_msg.prot, ack_msg.number);
+
+            //int num = buf[offset];//option code
+            //offset ++;
             //char *common = NULL;
-
+/*
             if(opt_code == 0){
                 parse_opt0(buf, offset, md);
             }
+*/
+            parse_name(buf, offset, md);
+            construct_gw(inet_ntoa(gw), md);
         }
     }
 

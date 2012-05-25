@@ -42,6 +42,10 @@
 
 typedef char * string;
 
+struct prefixes{
+    char name[255];
+    struct prefixes *next;
+};
 
 struct ccn_dhcp_entry {
     struct ccn_charbuf *name_prefix;
@@ -65,6 +69,7 @@ struct pact{//active msg
 }__attribute__((__packed__));
 
 struct pack{//active ACK msg
+    uint32_t addr;
     uint16_t port;
     uint8_t prot;//protocol, 6 for TCP and 17 for UDP
     uint8_t number;
@@ -86,7 +91,7 @@ struct pheader *get_header(uint8_t type);
 
 struct pact *get_pact(char *myip, int iport, int len, int protocol);
 
-struct pack *get_pack(int port, int protocol, int number);
+struct pack *get_pack(char *myip, int port, int protocol, int number);
 
 int is_valid_act(struct pheader *header);
 

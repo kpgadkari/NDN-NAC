@@ -1,5 +1,5 @@
 SUBDIR = inform nac
-export CCNX_DIR = /Users/fan/NDN-NAC/ccnx-0.6.0
+export CCNX_DIR = ~/ccnx
 all:
 	for i in ${SUBDIR}; do\
 		echo "make" $$i : `pwd`/$$i;\
